@@ -287,7 +287,7 @@
   <canvas id="game"></canvas>
 
   <script>
-    // ================== PRE-GAME STATE ==================
+    // ================== PRE-GAME / SHARED CONSTANTS ==================
     let username = "Player";
     let betAmount = 1;
 
@@ -305,11 +305,57 @@
       if (e.key === "Enter") startGame();
     });
 
+    // World & snake constants (must match server)
+    const worldWidth  = 5000;
+    const worldHeight = 5000;
+
+    const baseRadius = 14;
+    const baseLength = 160;
+    const lengthGainPerFood = 35;
+    const lengthLossPerSecond = 60;
+
+    const normalSpeed = 260;
+    const boostSpeed  = 420;
+    const turnRate    = 7;
+    const maxDt       = 0.035;
+
+    // Radius helper usable for both local + remote snakes
+    function getRadiusForLength(length) {
+      const growthRate = 0.25 / 1000;
+      const extraLength = Math.max(0, length - baseLength);
+      const scale = 1 + extraLength * growthRate;
+      return baseRadius * scale;
+    }
+
+    // Generic snake trimming
+    function trimSnakeArray(points, targetLength) {
+      if (!points || points.length < 2) return;
+
+      let distSoFar = 0;
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        distSoFar += Math.hypot(dx, dy);
+        if (distSoFar > targetLength) {
+          points.length = i;
+          break;
+        }
+      }
+    }
+
     // ================== MULTIPLAYER (WEBSOCKET) ==================
+    // For local testing:
+    // let socket = new WebSocket("ws://localhost:8080");
+    // For production, switch to your wss:// endpoint.
     let socket = new WebSocket("wss://snakebet-server.fly.dev");
+
     let socketOpen = false;
     let myId = null;
-    let otherPlayers = {};
+
+    // id -> { id, name, hue, body: [{x,y},...], length, angle, samples, interp }
+    const remoteSnakes = {};
 
     socket.addEventListener("open", () => {
       socketOpen = true;
@@ -335,13 +381,57 @@
       }
 
       if (data.type === "world") {
-        otherPlayers = {};
+        const seenIds = new Set();
+        const now = performance.now();
+
         for (const p of data.players) {
-          if (p.id !== myId) {
-            otherPlayers[p.id] = p;
+          if (p.id === myId) continue; // don't track ourselves
+
+          seenIds.add(p.id);
+
+          let s = remoteSnakes[p.id];
+          if (!s) {
+            s = remoteSnakes[p.id] = {
+              id: p.id,
+              name: p.name || "Player",
+              hue: typeof p.hue === "number" ? p.hue : Math.floor(Math.random() * 360),
+              body: [],
+              samples: [],
+              interp: null,
+              length: typeof p.length === "number" ? p.length : baseLength,
+              angle: typeof p.angle === "number" ? p.angle : 0
+            };
+          }
+
+          s.name = p.name || s.name;
+          if (typeof p.hue === "number") s.hue = p.hue;
+
+          // Push a new snapshot sample
+          s.samples.push({
+            time: now,
+            x: p.x,
+            y: p.y,
+            angle: typeof p.angle === "number" ? p.angle : s.angle,
+            length: typeof p.length === "number" ? p.length : s.length
+          });
+
+          // Update last known angle/length for fallback
+          if (typeof p.angle === "number") s.angle = p.angle;
+          if (typeof p.length === "number") s.length = p.length;
+
+          // Limit history size
+          if (s.samples.length > 60) {
+            s.samples.shift();
           }
         }
-        // (We keep foods local-only for now)
+
+        // Remove snakes not present in this snapshot
+        for (const id in remoteSnakes) {
+          if (!seenIds.has(id)) {
+            delete remoteSnakes[id];
+          }
+        }
+
         return;
       }
     });
@@ -366,51 +456,10 @@
       }));
     }
 
-    // ================== START GAME ==================
-    let hasStarted = false;
+    // ================== SNAKE GAME STATE ==================
 
-    function startGame() {
-      if (hasStarted) return;
-      hasStarted = true;
-
-      const input = document.getElementById("username");
-      const name = input.value.trim();
-      if (name !== "") username = name;
-
-      const betSelect = document.getElementById("bet-amount");
-      betAmount = parseInt(betSelect.value, 10) || 1;
-
-      // join server AFTER username & hue chosen
-      sendJoin();
-
-      document.body.classList.remove("start-screen");
-      document.body.classList.add("playing");
-
-      resizeCanvas();
-      respawn();
-      resetFood();
-      lastTime = null;
-      requestAnimationFrame(gameLoop);
-    }
-
-    // ================== SNAKE GAME CODE ==================
-
-    // ---- World settings ----
-    const worldWidth  = 5000;
-    const worldHeight = 5000;
-
-    // ---- Snake settings ----
     let snakeHue = Math.floor(Math.random() * 360);
-    const baseRadius = 14;
-    const baseLength = 160;
     let snakeLength = baseLength;
-    const lengthGainPerFood = 35;
-    const lengthLossPerSecond = 60;
-
-    const normalSpeed = 260;
-    const boostSpeed  = 420;
-    const turnRate    = 7;
-    const maxDt       = 0.035;
 
     let snake = [];
     let foods = [];
@@ -428,30 +477,46 @@
     const minZoom = 0.6;
     const maxZoom = 2.0;
 
-    // ---- Radius scaling ----
     function getCurrentRadius() {
-      const growthRate = 0.25 / 1000;
-      const extraLength = Math.max(0, snakeLength - baseLength);
-      const scale = 1 + extraLength * growthRate;
-      return baseRadius * scale;
+      return getRadiusForLength(snakeLength);
     }
 
-    // ---- Utilities ----
-    function shortestAngleDiff(a, b) {
-      let diff = (b - a) % (Math.PI * 2);
-      if (diff > Math.PI) diff -= Math.PI * 2;
-      if (diff < -Math.PI) diff += Math.PI * 2;
-      return diff;
+    // ================== START GAME ==================
+    let hasStarted = false;
+
+    function startGame() {
+      if (hasStarted) return;
+      hasStarted = true;
+
+      const input = document.getElementById("username");
+      const name = input.value.trim();
+      if (name !== "") username = name;
+
+      const betSelect = document.getElementById("bet-amount");
+      betAmount = parseInt(betSelect.value, 10) || 1;
+
+      document.body.classList.remove("start-screen");
+      document.body.classList.add("playing");
+
+      resizeCanvas();
+      respawn();
+      resetFood();
+      lastTime = null;
+
+      if (socketOpen) {
+        sendJoin();
+      } else {
+        const joinOnOpen = () => {
+          socket.removeEventListener("open", joinOnOpen);
+          sendJoin();
+        };
+        socket.addEventListener("open", joinOnOpen);
+      }
+
+      requestAnimationFrame(gameLoop);
     }
 
-    function worldToScreen(wx, wy) {
-      return {
-        x: (wx - camX) * zoom + canvas.width / 2,
-        y: (wy - camY) * zoom + canvas.height / 2
-      };
-    }
-
-    // ---- Init / Respawn ----
+    // ================== INIT / RESPAWN / FOOD ==================
     function respawn() {
       const x = worldWidth / 2;
       const y = worldHeight / 2;
@@ -468,7 +533,7 @@
       mouse.x = canvas.width / 2;
       mouse.y = canvas.height / 2;
 
-      snakeHue = Math.floor(Math.random() * 360);
+      // don’t re-randomize snakeHue here; keep same color for this session
     }
 
     function resetFood() {
@@ -485,7 +550,7 @@
       });
     }
 
-    // ---- Input ----
+    // ================== INPUT ==================
     canvas.addEventListener("mousemove", (e) => {
       const rect = canvas.getBoundingClientRect();
       mouse.x = e.clientX - rect.left;
@@ -519,7 +584,80 @@
       { passive: false }
     );
 
-    // ---- Main loop ----
+    // ================== UTILS ==================
+    function shortestAngleDiff(a, b) {
+      let diff = (b - a) % (Math.PI * 2);
+      if (diff > Math.PI) diff -= Math.PI * 2;
+      if (diff < -Math.PI) diff += Math.PI * 2;
+      return diff;
+    }
+
+    const INTERP_DELAY_MS = 100;
+
+    function updateRemoteSnakes(dt) {
+      const now = performance.now();
+      const renderTime = now - INTERP_DELAY_MS;
+
+      for (const id in remoteSnakes) {
+        const s = remoteSnakes[id];
+        const arr = s.samples;
+        if (!arr || arr.length === 0) continue;
+
+        // Keep only the two samples bracketing renderTime
+        while (arr.length >= 2 && arr[1].time <= renderTime) {
+          arr.shift();
+        }
+
+        const a = arr[0];
+        const b = arr[1] || arr[0];
+
+        let t = 0;
+        if (b.time !== a.time) {
+          t = (renderTime - a.time) / (b.time - a.time);
+          if (t < 0) t = 0;
+          if (t > 1) t = 1;
+        }
+
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+
+        const baseAngle = a.angle;
+        let diff = shortestAngleDiff(baseAngle, b.angle);
+        const angle = baseAngle + diff * t;
+
+        const length = a.length + (b.length - a.length) * t;
+
+        s.interp = { x, y, angle, length };
+
+        if (!s.body || s.body.length === 0) {
+          s.body = [{ x, y }];
+        } else {
+          const head = s.body[0];
+          const dx = x - head.x;
+          const dy = y - head.y;
+          const dist = Math.hypot(dx, dy);
+          const minStep = 1;
+
+          if (dist > minStep) {
+            s.body.unshift({ x, y });
+          } else {
+            head.x = x;
+            head.y = y;
+          }
+        }
+
+        trimSnakeArray(s.body, length);
+      }
+    }
+
+    function worldToScreen(wx, wy) {
+      return {
+        x: (wx - camX) * zoom + canvas.width / 2,
+        y: (wy - camY) * zoom + canvas.height / 2
+      };
+    }
+
+    // ================== MAIN LOOP ==================
     function gameLoop(timestamp) {
       if (!lastTime) lastTime = timestamp;
       let dt = (timestamp - lastTime) / 1000;
@@ -533,7 +671,7 @@
       requestAnimationFrame(gameLoop);
     }
 
-    // ---- Game logic ----
+    // ================== UPDATE ==================
     function update(dt) {
       if (!snake.length) return;
       const head = snake[0];
@@ -581,6 +719,7 @@
         y: head.y + stepY
       };
 
+      // local border + self-death (for responsiveness)
       if (
         newHead.x < 0 || newHead.x > worldWidth ||
         newHead.y < 0 || newHead.y > worldHeight
@@ -590,19 +729,7 @@
       }
 
       snake.unshift(newHead);
-
-      let distSoFar = 0;
-      for (let i = 1; i < snake.length; i++) {
-        const a = snake[i - 1];
-        const b = snake[i];
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        distSoFar += Math.hypot(dx, dy);
-        if (distSoFar > snakeLength) {
-          snake.length = i;
-          break;
-        }
-      }
+      trimSnakeArray(snake, snakeLength);
 
       const currentRadius = getCurrentRadius();
       const headRadiusWorld = currentRadius * 1.2;
@@ -632,9 +759,12 @@
 
       // send my state to the server
       sendState(newHead.x, newHead.y, lastAngle, snakeLength);
+
+      // smooth remote snakes based on snapshot history
+      updateRemoteSnakes(dt);
     }
 
-    // ---- Drawing ----
+    // ================== DRAWING ==================
     function drawBackground() {
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
@@ -678,14 +808,13 @@
       }
     }
 
-    function drawSnakeBody() {
-      if (snake.length < 2) return;
+    function drawSnakeBodyGeneric(body, length, hue) {
+      if (!body || body.length < 2) return;
 
-      const currentRadius = getCurrentRadius();
-
-      const tailIndex = snake.length - 1;
-      const tail = snake[tailIndex];
-      const head = snake[0];
+      const currentRadius = getRadiusForLength(length);
+      const tailIndex = body.length - 1;
+      const tail = body[tailIndex];
+      const head = body[0];
 
       const tailScr = worldToScreen(tail.x, tail.y);
       const headScr = worldToScreen(head.x, head.y);
@@ -696,23 +825,22 @@
       ctx.beginPath();
       ctx.moveTo(tailScr.x, tailScr.y);
       for (let i = tailIndex - 1; i >= 0; i--) {
-        const p = worldToScreen(snake[i].x, snake[i].y);
+        const p = worldToScreen(body[i].x, body[i].y);
         ctx.lineTo(p.x, p.y);
       }
 
       ctx.lineWidth = currentRadius * 2 * zoom;
 
       const gradient = ctx.createLinearGradient(tailScr.x, tailScr.y, headScr.x, headScr.y);
-      gradient.addColorStop(0, `hsl(${snakeHue}, 75%, 35%)`);
-      gradient.addColorStop(1, `hsl(${snakeHue}, 85%, 60%)`);
+      gradient.addColorStop(0, `hsl(${hue}, 75%, 35%)`);
+      gradient.addColorStop(1, `hsl(${hue}, 85%, 60%)`);
       ctx.strokeStyle = gradient;
       ctx.stroke();
       ctx.restore();
     }
 
-    function drawSnakeHeadAndEyes() {
-      const head = snake[0];
-      const currentRadius = getCurrentRadius();
+    function drawSnakeHeadAndEyesGeneric(head, length, hue, angle) {
+      const currentRadius = getRadiusForLength(length);
 
       const headRadiusWorld = currentRadius * 1.2;
       const eyeForward = headRadiusWorld * 0.4;
@@ -724,7 +852,7 @@
 
       ctx.beginPath();
       ctx.arc(h.x, h.y, headRadiusWorld * zoom, 0, Math.PI * 2);
-      ctx.fillStyle = `hsl(${snakeHue}, 85%, 65%)`;
+      ctx.fillStyle = `hsl(${hue}, 85%, 65%)`;
       ctx.fill();
       ctx.lineWidth = 3 * zoom;
       ctx.strokeStyle = "#000";
@@ -733,13 +861,13 @@
       for (const side of [-1, 1]) {
         const exWorld =
           head.x +
-          Math.cos(lastAngle) * eyeForward +
-          Math.cos(lastAngle + side * Math.PI / 2) * eyeSide * 0.6;
+          Math.cos(angle) * eyeForward +
+          Math.cos(angle + side * Math.PI / 2) * eyeSide * 0.6;
 
         const eyWorld =
           head.y +
-          Math.sin(lastAngle) * eyeForward +
-          Math.sin(lastAngle + side * Math.PI / 2) * eyeSide * 0.6;
+          Math.sin(angle) * eyeForward +
+          Math.sin(angle + side * Math.PI / 2) * eyeSide * 0.6;
 
         const e = worldToScreen(exWorld, eyWorld);
 
@@ -752,9 +880,9 @@
         ctx.stroke();
 
         const pxWorld =
-          exWorld + Math.cos(lastAngle) * eyeRadiusWorld * 0.4;
+          exWorld + Math.cos(angle) * eyeRadiusWorld * 0.4;
         const pyWorld =
-          eyWorld + Math.sin(lastAngle) * eyeRadiusWorld * 0.4;
+          eyWorld + Math.sin(angle) * eyeRadiusWorld * 0.4;
 
         const p = worldToScreen(pxWorld, pyWorld);
 
@@ -765,23 +893,37 @@
       }
     }
 
-    // ---- Draw other players' heads + names ----
-    function drawOtherPlayers() {
-      for (const id in otherPlayers) {
-        const p = otherPlayers[id];
-        const scr = worldToScreen(p.x, p.y);
+    function drawMySnake() {
+      if (!snake.length) return;
+      drawSnakeBodyGeneric(snake, snakeLength, snakeHue);
+      const head = snake[0];
+      drawSnakeHeadAndEyesGeneric(head, snakeLength, snakeHue, lastAngle);
+    }
 
-        const radius = getCurrentRadius() * zoom * 1.1;
+    function drawRemoteSnakes() {
+      for (const id in remoteSnakes) {
+        const s = remoteSnakes[id];
+        if (!s.body || !s.body.length) continue;
 
-        ctx.beginPath();
-        ctx.arc(scr.x, scr.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = `hsl(${p.hue}, 80%, 55%)`;
-        ctx.fill();
+        const interp = s.interp;
+        const length = interp ? interp.length : s.length;
+        const angle  = interp ? interp.angle  : s.angle;
 
+        drawSnakeBodyGeneric(s.body, length, s.hue);
+
+        const headPos = interp ? { x: interp.x, y: interp.y } : s.body[0];
+
+        drawSnakeHeadAndEyesGeneric(headPos, length, s.hue, angle);
+
+        const headScr = worldToScreen(headPos.x, headPos.y);
+        const radius = getRadiusForLength(length) * zoom * 1.4;
+
+        ctx.save();
         ctx.fillStyle = "white";
         ctx.font = "14px Arial";
         ctx.textAlign = "center";
-        ctx.fillText(p.name || "Player", scr.x, scr.y - radius - 6);
+        ctx.fillText(s.name || "Player", headScr.x, headScr.y - radius - 6);
+        ctx.restore();
       }
     }
 
@@ -835,13 +977,11 @@
       drawWorldBorder();
       if (!snake || snake.length === 0) return;
       drawFood();
-      drawSnakeBody();
-      drawSnakeHeadAndEyes();
-      drawOtherPlayers();
+      drawMySnake();
+      drawRemoteSnakes();
       drawDirectionIndicator();
       drawHUD();
     }
   </script>
 </body>
 </html>
-
