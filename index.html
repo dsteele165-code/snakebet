@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -27,9 +26,9 @@
     /* ---------- Start screen layout ---------- */
     body.start-screen {
       display: flex;
-      align-items: flex-start;              /* sit a bit lower */
+      align-items: flex-start;
       justify-content: center;
-      padding-top: 8vh;                     /* move UI up from center */
+      padding-top: 8vh;
       background:
         radial-gradient(circle at top, #222642 0, #05060a 45%, #020308 100%);
       color: var(--text-main);
@@ -47,6 +46,7 @@
         0 0 0 1px rgba(255, 255, 255, 0.02);
       backdrop-filter: blur(18px);
       animation: pop-in 420ms cubic-bezier(.16,.84,.44,1);
+      position: relative;
     }
 
     #start-screen h1 {
@@ -61,17 +61,16 @@
       font-size: 15px;
       color: var(--text-muted);
     }
-	
-.tagline-sub {
-  margin: 8px 0 18px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #1ee97b;
-  text-shadow: 0 0 8px rgba(30, 233, 123, 0.35);
-}
 
+    .tagline-sub {
+      margin: 8px 0 18px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #1ee97b;
+      text-shadow: 0 0 8px rgba(30, 233, 123, 0.35);
+    }
 
     .field-group {
       margin-top: 6px;
@@ -96,7 +95,7 @@
       flex: 1;
       padding: 10px 22px;
       font-size: 18px;
-      border-radius: 999px; /* pill / ellipse */
+      border-radius: 999px;
       border: 2px solid rgba(255, 255, 255, 0.22);
       background: #05060d;
       color: var(--text-main);
@@ -109,6 +108,26 @@
     }
 
     #username:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      background: #050816;
+    }
+
+    #bet-amount {
+      width: 100%;
+      padding: 10px 22px;
+      font-size: 18px;
+      border-radius: 999px;
+      border: 2px solid rgba(255, 255, 255, 0.22);
+      background: #05060d;
+      color: var(--text-main);
+      outline: none;
+      transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      appearance: none;
+      background-image: linear-gradient(to bottom, #05060d, #040509);
+    }
+
+    #bet-amount:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
       background: #050816;
@@ -145,49 +164,23 @@
       box-shadow: 0 18px 40px rgba(0, 0, 0, 0.9);
       filter: brightness(1.04);
     }
-	
-	#bet-amount {
-  width: 100%;
-  padding: 10px 22px;
-  font-size: 18px;
-  border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, 0.22);
-  background: #05060d;
-  color: var(--text-main);
-  outline: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
-  appearance: none; /* cleaner dropdown look */
-  background-image: linear-gradient(to bottom, #05060d, #040509);
-}
-
-#snakebet-logo {
-  position: absolute;
-  top: 30px;
-  right: 20px;
-  width: 160px;
-  height: 160px;
-  object-fit: contain;
-  filter: drop-shadow(0 0 12px rgba(30, 233, 123, 0.35)) brightness(1.05);
-  user-select: none;
-  pointer-events: none;
-}
-
-#start-screen {
-  position: relative; /* allow absolutely positioned logo */
-}
-
-
-#bet-amount:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  background: #050816;
-}
-
 
     #start-btn:active {
       transform: translateY(1px);
       box-shadow: 0 10px 24px rgba(0, 0, 0, 0.85);
       filter: brightness(0.96);
+    }
+
+    #snakebet-logo {
+      position: absolute;
+      top: 30px;
+      right: 20px;
+      width: 160px;
+      height: 160px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 12px rgba(30, 233, 123, 0.35)) brightness(1.05);
+      user-select: none;
+      pointer-events: none;
     }
 
     .hint {
@@ -218,7 +211,7 @@
     #game {
       position: fixed;
       inset: 0;
-      display: none; /* toggled on when game starts */
+      display: none;
     }
 
     body.playing #game {
@@ -249,12 +242,13 @@
 </head>
 
 <body class="start-screen">
-  <!-- BEAUTIFIED START SCREEN -->
+  <!-- START SCREEN -->
   <div id="start-screen">
-  <img id="snakebet-logo" src="81af9b43-3439-4c84-83af-bf4e95822a25.png" alt="SnakeBet Logo" />
-    <<h1>SnakeBet</h1>
-<p class="tagline-sub">The first <b>BIG</b> skill-based winnings site!</p>
-<p class="tagline">Claim your name and slither into the arena.</p>
+    <img id="snakebet-logo" src="81af9b43-3439-4c84-83af-bf4e95822a25.png" alt="SnakeBet Logo" />
+
+    <h1>SnakeBet</h1>
+    <p class="tagline-sub">The first <b>BIG</b> skill-based winnings site!</p>
+    <p class="tagline">Claim your name and slither into the arena.</p>
 
     <div class="field-group">
       <span class="field-label">Username</span>
@@ -268,17 +262,19 @@
         />
       </div>
     </div>
-	<div class="field-group" style="margin-top: 20px;">
-  <span class="field-label">Select Bet Amount</span>
-  <select id="bet-amount">
-    <option value="1">1$</option>
-    <option value="5">5$</option>
-    <option value="10">10$</option>
-    <option value="20">20$</option>
-    <option value="50">50$</option>
-    <option value="100">100$</option>
-  </select>
-</div>
+
+    <div class="field-group" style="margin-top: 20px;">
+      <span class="field-label">Select Bet Amount</span>
+      <select id="bet-amount">
+        <option value="1">1$</option>
+        <option value="5">5$</option>
+        <option value="10">10$</option>
+        <option value="20">20$</option>
+        <option value="50">50$</option>
+        <option value="100">100$</option>
+      </select>
+    </div>
+
     <button id="start-btn">
       <span>Play</span>
     </button>
@@ -293,6 +289,8 @@
   <script>
     // ================== PRE-GAME STATE ==================
     let username = "Player";
+    let betAmount = 1;
+
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
 
@@ -302,62 +300,73 @@
     }
     window.addEventListener("resize", resizeCanvas);
 
-    // Start button + Enter key on input
     document.getElementById("start-btn").addEventListener("click", startGame);
     document.getElementById("username").addEventListener("keydown", (e) => {
       if (e.key === "Enter") startGame();
     });
-	
-	const socket = new WebSocket("wss://snakebet-server.fly.dev");
 
-// after user hits Play:
-socket.addEventListener("open", () => {
-  socket.send(JSON.stringify({
-    type: "join",
-    name: username,
-    hue: snakeHue   // if you want to sync color too
-  }));
-});
+    // ================== MULTIPLAYER (WEBSOCKET) ==================
+    let socket = new WebSocket("wss://snakebet-server.fly.dev");
+    let socketOpen = false;
+    let myId = null;
+    let otherPlayers = {};
 
-// send your state each frame or every few frames:
-function sendState(headX, headY, angle, length) {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({
-      type: "state",
-      x: headX,
-      y: headY,
-      angle,
-      length
-    }));
-  }
-}
+    socket.addEventListener("open", () => {
+      socketOpen = true;
+      console.log("Connected to SnakeBet server");
+    });
 
-// when you eat food on client:
-function reportFoodEaten(foodId) {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({
-      type: "eat",
-      foodId
-    }));
-  }
-}
+    socket.addEventListener("close", () => {
+      console.log("Disconnected from server");
+      socketOpen = false;
+    });
 
-// receive world snapshots
-socket.addEventListener("message", (event) => {
-  const data = JSON.parse(event.data);
+    socket.addEventListener("error", (err) => {
+      console.error("WebSocket error:", err);
+    });
 
-  if (data.type === "welcome") {
-    // data.id, data.worldWidth, data.worldHeight, data.foods
-    // you can sync your local WORLD_* with this, if needed
-  }
+    socket.addEventListener("message", (event) => {
+      const data = JSON.parse(event.data);
 
-  if (data.type === "world") {
-    // data.players, data.foods
-    // draw all other snakes + foods from here
-  }
-});
+      if (data.type === "welcome") {
+        myId = data.id;
+        console.log("Welcome, id =", myId);
+        return;
+      }
 
+      if (data.type === "world") {
+        otherPlayers = {};
+        for (const p of data.players) {
+          if (p.id !== myId) {
+            otherPlayers[p.id] = p;
+          }
+        }
+        // (We keep foods local-only for now)
+        return;
+      }
+    });
 
+    function sendJoin() {
+      if (!socketOpen) return;
+      socket.send(JSON.stringify({
+        type: "join",
+        name: username,
+        hue: snakeHue
+      }));
+    }
+
+    function sendState(headX, headY, angle, length) {
+      if (!socketOpen) return;
+      socket.send(JSON.stringify({
+        type: "state",
+        x: headX,
+        y: headY,
+        angle,
+        length
+      }));
+    }
+
+    // ================== START GAME ==================
     let hasStarted = false;
 
     function startGame() {
@@ -368,11 +377,16 @@ socket.addEventListener("message", (event) => {
       const name = input.value.trim();
       if (name !== "") username = name;
 
-      // switch from pretty start screen to full-screen game
+      const betSelect = document.getElementById("bet-amount");
+      betAmount = parseInt(betSelect.value, 10) || 1;
+
+      // join server AFTER username & hue chosen
+      sendJoin();
+
       document.body.classList.remove("start-screen");
       document.body.classList.add("playing");
 
-      resizeCanvas();       // make sure canvas fills screen
+      resizeCanvas();
       respawn();
       resetFood();
       lastTime = null;
@@ -381,50 +395,48 @@ socket.addEventListener("message", (event) => {
 
     // ================== SNAKE GAME CODE ==================
 
-    // -------------------- World settings --------------------
+    // ---- World settings ----
     const worldWidth  = 5000;
     const worldHeight = 5000;
 
-    // -------------------- Snake settings --------------------
+    // ---- Snake settings ----
     let snakeHue = Math.floor(Math.random() * 360);
-    const baseRadius = 14;            // base half thickness of body (WORLD units)
-    const baseLength = 160;           // minimum length (default)
-    let snakeLength = baseLength;     // current length in WORLD pixels
-    const lengthGainPerFood = 1;     // grow per food eaten
-    const lengthLossPerSecond = 60;   // length burned per second while boosting
+    const baseRadius = 14;
+    const baseLength = 160;
+    let snakeLength = baseLength;
+    const lengthGainPerFood = 35;
+    const lengthLossPerSecond = 60;
 
-    const normalSpeed = 260;          // px/sec
-    const boostSpeed  = 420;          // px/sec (boost)
-    const turnRate    = 7;            // radians per second (max turning speed)
-    const maxDt       = 0.035;        // clamp delta time
+    const normalSpeed = 260;
+    const boostSpeed  = 420;
+    const turnRate    = 7;
+    const maxDt       = 0.035;
 
-    let snake = [];                   // segments in WORLD coordinates
+    let snake = [];
     let foods = [];
 
-    let mouse = { x: 0, y: 0 };       // mouse in SCREEN coords (relative to canvas)
+    let mouse = { x: 0, y: 0 };
     let boosting = false;
     let lastAngle = 0;
     let lastTime  = null;
 
-    let camX = 0;                     // camera center in WORLD coords
+    let camX = 0;
     let camY = 0;
 
-    // -------------------- Zoom settings --------------------
-    let zoom = 1;           // current zoom factor (1 = default)
-    const minZoom = 0.6;    // how far you can zoom out
-    const maxZoom = 2.0;    // how far you can zoom in
+    // ---- Zoom settings ----
+    let zoom = 1;
+    const minZoom = 0.6;
+    const maxZoom = 2.0;
 
-    // -------------------- Radius scaling (5% per 800 length) --------------------
+    // ---- Radius scaling ----
     function getCurrentRadius() {
-  // progressive 5% width growth per 800 points
-  const growthRate = .25 / 1000; // 5% increase spread smoothly over 800 points
-  const extraLength = Math.max(0, snakeLength - baseLength);
-  const scale = 1 + extraLength * growthRate;
-  return baseRadius * scale;
-}
+      const growthRate = 0.25 / 1000;
+      const extraLength = Math.max(0, snakeLength - baseLength);
+      const scale = 1 + extraLength * growthRate;
+      return baseRadius * scale;
+    }
 
-
-    // -------------------- Utilities --------------------
+    // ---- Utilities ----
     function shortestAngleDiff(a, b) {
       let diff = (b - a) % (Math.PI * 2);
       if (diff > Math.PI) diff -= Math.PI * 2;
@@ -439,7 +451,7 @@ socket.addEventListener("message", (event) => {
       };
     }
 
-    // -------------------- Init / Respawn --------------------
+    // ---- Init / Respawn ----
     function respawn() {
       const x = worldWidth / 2;
       const y = worldHeight / 2;
@@ -453,7 +465,6 @@ socket.addEventListener("message", (event) => {
       camX = x;
       camY = y;
 
-      // center mouse on screen so snake doesn't jitter on spawn
       mouse.x = canvas.width / 2;
       mouse.y = canvas.height / 2;
 
@@ -462,19 +473,19 @@ socket.addEventListener("message", (event) => {
 
     function resetFood() {
       foods = [];
-      for (let i = 0; i < 200; i++) spawnFood();  // adjust number if you want denser dots
+      for (let i = 0; i < 200; i++) spawnFood();
     }
 
     function spawnFood() {
       foods.push({
         x: Math.random() * worldWidth,
         y: Math.random() * worldHeight,
-        radius: 4 + Math.random() * 3, // WORLD radius
+        radius: 4 + Math.random() * 3,
         color: `hsl(${Math.random() * 360}, 90%, 60%)`
       });
     }
 
-    // -------------------- Input --------------------
+    // ---- Input ----
     canvas.addEventListener("mousemove", (e) => {
       const rect = canvas.getBoundingClientRect();
       mouse.x = e.clientX - rect.left;
@@ -493,18 +504,14 @@ socket.addEventListener("message", (event) => {
       boosting = false;
     });
 
-    // Zoom control: mouse wheel
     canvas.addEventListener(
       "wheel",
       (e) => {
         e.preventDefault();
         const factor = 1.08;
 
-        if (e.deltaY < 0) {
-          zoom *= factor;
-        } else {
-          zoom /= factor;
-        }
+        if (e.deltaY < 0) zoom *= factor;
+        else zoom /= factor;
 
         if (zoom < minZoom) zoom = minZoom;
         if (zoom > maxZoom) zoom = maxZoom;
@@ -512,7 +519,7 @@ socket.addEventListener("message", (event) => {
       { passive: false }
     );
 
-    // -------------------- Main loop --------------------
+    // ---- Main loop ----
     function gameLoop(timestamp) {
       if (!lastTime) lastTime = timestamp;
       let dt = (timestamp - lastTime) / 1000;
@@ -526,16 +533,14 @@ socket.addEventListener("message", (event) => {
       requestAnimationFrame(gameLoop);
     }
 
-    // -------------------- Game logic --------------------
+    // ---- Game logic ----
     function update(dt) {
       if (!snake.length) return;
       const head = snake[0];
 
-      // CAMERA follows snake head
       camX = head.x;
       camY = head.y;
 
-      // Mouse direction from SCREEN CENTER
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
 
@@ -549,7 +554,6 @@ socket.addEventListener("message", (event) => {
         targetAngle = Math.atan2(my, mx);
       }
 
-      // Smooth turning
       const diff = shortestAngleDiff(lastAngle, targetAngle);
       const maxTurn = turnRate * dt;
       if (Math.abs(diff) <= maxTurn) {
@@ -558,7 +562,6 @@ socket.addEventListener("message", (event) => {
         lastAngle += Math.sign(diff) * maxTurn;
       }
 
-      // Speed & boost
       let speed = normalSpeed;
       const canBoost = snakeLength > baseLength + 1;
 
@@ -578,7 +581,6 @@ socket.addEventListener("message", (event) => {
         y: head.y + stepY
       };
 
-      // World border = death & respawn
       if (
         newHead.x < 0 || newHead.x > worldWidth ||
         newHead.y < 0 || newHead.y > worldHeight
@@ -587,10 +589,8 @@ socket.addEventListener("message", (event) => {
         return;
       }
 
-      // Insert new head at front
       snake.unshift(newHead);
 
-      // Trim snake path so total length ~= snakeLength
       let distSoFar = 0;
       for (let i = 1; i < snake.length; i++) {
         const a = snake[i - 1];
@@ -604,10 +604,9 @@ socket.addEventListener("message", (event) => {
         }
       }
 
-      // Self collision (radius scales with length)
       const currentRadius = getCurrentRadius();
-      const headRadiusWorld = currentRadius * 1.1;
-      const killRadius = headRadiusWorld * 0.9;
+      const headRadiusWorld = currentRadius * 1.2;
+      const killRadius = headRadiusWorld * 0.75;
       const selfHitStartIndex = 12;
 
       for (let i = selfHitStartIndex; i < snake.length; i++) {
@@ -620,7 +619,6 @@ socket.addEventListener("message", (event) => {
         }
       }
 
-      // Eat food (also uses scaled head radius)
       for (let i = foods.length - 1; i >= 0; i--) {
         const f = foods[i];
         const dx = f.x - newHead.x;
@@ -631,9 +629,12 @@ socket.addEventListener("message", (event) => {
           spawnFood();
         }
       }
+
+      // send my state to the server
+      sendState(newHead.x, newHead.y, lastAngle, snakeLength);
     }
 
-    // -------------------- Drawing --------------------
+    // ---- Drawing ----
     function drawBackground() {
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
@@ -643,7 +644,6 @@ socket.addEventListener("message", (event) => {
         centerX, centerY, Math.max(canvas.width, canvas.height)
       );
 
-      // only brighten if actually boosting (canBoost + boosting)
       const actuallyBoosting = boosting && snakeLength > baseLength + 1;
       const innerColor = actuallyBoosting ? "#333333" : "#222222";
 
@@ -722,7 +722,6 @@ socket.addEventListener("message", (event) => {
 
       const h = worldToScreen(head.x, head.y);
 
-      // Head
       ctx.beginPath();
       ctx.arc(h.x, h.y, headRadiusWorld * zoom, 0, Math.PI * 2);
       ctx.fillStyle = `hsl(${snakeHue}, 85%, 65%)`;
@@ -731,7 +730,6 @@ socket.addEventListener("message", (event) => {
       ctx.strokeStyle = "#000";
       ctx.stroke();
 
-      // Eyes
       for (const side of [-1, 1]) {
         const exWorld =
           head.x +
@@ -767,6 +765,26 @@ socket.addEventListener("message", (event) => {
       }
     }
 
+    // ---- Draw other players' heads + names ----
+    function drawOtherPlayers() {
+      for (const id in otherPlayers) {
+        const p = otherPlayers[id];
+        const scr = worldToScreen(p.x, p.y);
+
+        const radius = getCurrentRadius() * zoom * 1.1;
+
+        ctx.beginPath();
+        ctx.arc(scr.x, scr.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = `hsl(${p.hue}, 80%, 55%)`;
+        ctx.fill();
+
+        ctx.fillStyle = "white";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(p.name || "Player", scr.x, scr.y - radius - 6);
+      }
+    }
+
     function drawDirectionIndicator() {
       if (!snake.length) return;
       const head = snake[0];
@@ -792,14 +810,15 @@ socket.addEventListener("message", (event) => {
       ctx.font = "16px Arial";
       ctx.textAlign = "left";
       ctx.fillText(`Player: ${username}`, 20, 30);
-      ctx.fillText("Move the mouse around your snake to steer (Slither-style).", 20, 50);
-      ctx.fillText("Hold LEFT MOUSE to BOOST (spends length).", 20, 70);
-      ctx.fillText(`Length: ${Math.round(snakeLength)}`, 20, 90);
-      ctx.fillText(`Zoom: ${zoom.toFixed(2)}x`, 20, 110);
+      ctx.fillText(`Bet: ${betAmount}$`, 20, 50);
+      ctx.fillText("Move the mouse around your snake to steer (Slither-style).", 20, 70);
+      ctx.fillText("Hold LEFT MOUSE to BOOST (spends length).", 20, 90);
+      ctx.fillText(`Length: ${Math.round(snakeLength)}`, 20, 110);
+      ctx.fillText(`Zoom: ${zoom.toFixed(2)}x`, 20, 130);
 
       if (boosting && snakeLength > baseLength + 1) {
         ctx.fillStyle = "rgba(255,200,200,0.95)";
-        ctx.fillText("BOOSTING!", 20, 130);
+        ctx.fillText("BOOSTING!", 20, 150);
       }
 
       ctx.textAlign = "right";
@@ -818,9 +837,11 @@ socket.addEventListener("message", (event) => {
       drawFood();
       drawSnakeBody();
       drawSnakeHeadAndEyes();
+      drawOtherPlayers();
       drawDirectionIndicator();
       drawHUD();
     }
   </script>
 </body>
 </html>
+
