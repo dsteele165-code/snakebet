@@ -112,6 +112,40 @@
       box-shadow: 0 0 0 3px var(--accent-soft);
       background: #050816;
     }
+	
+	#server-choice {
+  width: 100%;
+  padding: 10px 22px;
+  font-size: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  background: #05060d;
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  appearance: none;
+  background-image: linear-gradient(to bottom, #05060d, #040509);
+}
+
+#server-choice:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: #050816;
+}
+
+#server-meta {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+#server-player-count {
+  color: var(--accent);
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(30, 233, 123, 0.25);
+}
+
+
 
     #bet-amount {
       width: 100%;
@@ -244,12 +278,15 @@
 <body class="start-screen">
   <!-- START SCREEN -->
   <div id="start-screen">
-    <img id="snakebet-logo" src="81af9b43-3439-4c84-83af-bf4e95822a25.png" alt="SnakeBet Logo" />
+    <img id="snakebet-logo"
+         src="81af9b43-3439-4c84-83af-bf4e95822a25.png"
+         alt="SnakeBet Logo" />
 
     <h1>SnakeBet</h1>
     <p class="tagline-sub">The first <b>BIG</b> skill-based winnings site!</p>
     <p class="tagline">Claim your name and slither into the arena.</p>
 
+    <!-- Username -->
     <div class="field-group">
       <span class="field-label">Username</span>
       <div class="input-row">
@@ -263,6 +300,20 @@
       </div>
     </div>
 
+    <!-- Server -->
+    <div class="field-group" style="margin-top: 20px;">
+      <span class="field-label">Select Server</span>
+
+      <select id="server-choice">
+        <option value="wss://snakebet-server.fly.dev">SnakeBet Global</option>
+      </select>
+
+      <div id="server-meta">
+        Players online: <span id="server-player-count">—</span>
+      </div>
+    </div>
+
+    <!-- Bet Amount -->
     <div class="field-group" style="margin-top: 20px;">
       <span class="field-label">Select Bet Amount</span>
       <select id="bet-amount">
@@ -275,9 +326,7 @@
       </select>
     </div>
 
-    <button id="start-btn">
-      <span>Play</span>
-    </button>
+    <button id="start-btn"><span>Play</span></button>
 
     <p class="hint">Press <b>Enter</b> in the box to start</p>
     <p class="footer-text">Use your mouse to steer. Left click to boost.</p>
@@ -293,6 +342,10 @@
 
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
+	
+	const serverChoiceEl = document.getElementById("server-choice");
+	const serverPlayerCountEl = document.getElementById("server-player-count");
+
 
     function resizeCanvas() {
       canvas.width = window.innerWidth;
@@ -363,6 +416,7 @@
     });
 
     socket.addEventListener("close", () => {
+	serverPlayerCountEl.textContent = "—";
       console.log("Disconnected from server");
       socketOpen = false;
     });
@@ -381,6 +435,7 @@
       }
 
       if (data.type === "world") {
+		serverPlayerCountEl.textContent = String(data.players.length);
         const seenIds = new Set();
         const now = performance.now();
 
@@ -538,7 +593,7 @@
 
     function resetFood() {
       foods = [];
-      for (let i = 0; i < 400; i++) spawnFood();
+      for (let i = 0; i < 200; i++) spawnFood();
     }
 
     function spawnFood() {
@@ -985,4 +1040,3 @@
   </script>
 </body>
 </html>
-
