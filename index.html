@@ -462,17 +462,21 @@
           if (typeof p.hue === "number") s.hue = p.hue;
 
           // Push a new snapshot sample
-          s.samples.push({
-            time: now,
-            x: p.x,
-            y: p.y,
-            angle: typeof p.angle === "number" ? p.angle : s.angle,
-            length: typeof p.length === "number" ? p.length : s.length
-          });
+         s.samples.push({
+			time: now,
+			x: p.x,
+			y: p.y,
+			angle: (typeof p.angle === "number" && Number.isFinite(p.angle)) ? p.angle
+			: (Number.isFinite(s.angle) ? s.angle : 0),
+			length: (typeof p.length === "number" && Number.isFinite(p.length)) ? p.length
+         : (Number.isFinite(s.length) ? s.length : baseLength)
+});
+
 
           // Update last known angle/length for fallback
-          if (typeof p.angle === "number") s.angle = p.angle;
-          if (typeof p.length === "number") s.length = p.length;
+          if (typeof p.angle === "number" && Number.isFinite(p.angle)) s.angle = p.angle;
+		if (typeof p.length === "number" && Number.isFinite(p.length)) s.length = p.length;
+
 
           // Limit history size
           if (s.samples.length > 60) {
@@ -651,29 +655,29 @@
 
 // Unity-style SmoothDamp (but simplified)
 function smoothDamp(current, target, currentVelocityObj, smoothTime, dt) {
+  const dtSafe = Math.max(1e-5, dt);  // <-- critical: never allow 0
   smoothTime = Math.max(0.0001, smoothTime);
   const omega = 2 / smoothTime;
 
-  const x = omega * dt;
+  const x = omega * dtSafe;
   const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
 
   let change = current - target;
   const originalTo = target;
 
-  // clamp max speed (optional — helps teleports)
   const maxChange = 999999;
   change = clamp(change, -maxChange, maxChange);
   target = current - change;
 
-  let temp = (currentVelocityObj.v + omega * change) * dt;
+  let temp = (currentVelocityObj.v + omega * change) * dtSafe;
   currentVelocityObj.v = (currentVelocityObj.v - omega * temp) * exp;
 
   let output = target + (change + temp) * exp;
 
-  // Prevent overshoot
+  // Prevent overshoot (and don’t divide by dt)
   if ((originalTo - current > 0) === (output > originalTo)) {
     output = originalTo;
-    currentVelocityObj.v = (output - originalTo) / dt;
+    currentVelocityObj.v = 0; // <-- critical: avoid Infinity/NaN
   }
 
   return output;
@@ -684,16 +688,16 @@ function smoothDampAngle(current, target, velObj, smoothTime, dt) {
   return smoothDamp(current, current + diff, velObj, smoothTime, dt);
 }
 
-    const INTERP_DELAY_MS = 200;
+    const INTERP_DELAY_MS = 240;
 
    function updateRemoteSnakes(dt) {
   const now = performance.now();
   const renderTime = now - INTERP_DELAY_MS;
 
   // tuning knobs
-  const posSmoothTime = 0.08;   // smaller = snappier, bigger = smoother
-  const angSmoothTime = 0.10;
-  const lenSmoothTime = 0.12;
+  const posSmoothTime = 0.11;   // smaller = snappier, bigger = smoother
+  const angSmoothTime = 0.13;
+  const lenSmoothTime = 0.16;
   const segmentSpacing = 2.5;   // spacing between stored body points (world units)
   const maxExtrapMs = 120;      // don’t extrapolate too far
 
@@ -799,75 +803,75 @@ function smoothDampAngle(current, target, velObj, smoothTime, dt) {
 
     // ================== MAIN LOOP ==================
     function gameLoop(timestamp) {
-      if (!lastTime) lastTime = timestamp;
-      let dt = (timestamp - lastTime) / 1000;
-      lastTime = timestamp;
+  if (!lastTime) lastTime = timestamp;
 
-      if (dt > maxDt) dt = maxDt;
+  let dt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
 
-      update(dt);
-      draw();
+  if (dt <= 0) dt = 1 / 60;
+  if (dt > maxDt) dt = maxDt;
 
-      requestAnimationFrame(gameLoop);
-    }
+  update(dt);
+  draw();
+
+  requestAnimationFrame(gameLoop);
+}
 
     // ================== UPDATE ==================
     function update(dt) {
-      if (!snake.length) return;
-      const head = snake[0];
+  // --- Update my local snake ---
+  if (snake.length) {
+    const head = snake[0];
+    camX = head.x;
+    camY = head.y;
 
-      camX = head.x;
-      camY = head.y;
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
 
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
+    const mx = mouse.x - centerX;
+    const my = mouse.y - centerY;
+    const distMouse = Math.hypot(mx, my);
 
-      const mx = mouse.x - centerX;
-      const my = mouse.y - centerY;
-      const distMouse = Math.hypot(mx, my);
+    const aimDeadZone = 6;
+    let targetAngle = lastAngle;
+    if (distMouse > aimDeadZone) {
+      targetAngle = Math.atan2(my, mx);
+    }
 
-      const aimDeadZone = 6;
-      let targetAngle = lastAngle;
-      if (distMouse > aimDeadZone) {
-        targetAngle = Math.atan2(my, mx);
-      }
+    const diff = shortestAngleDiff(lastAngle, targetAngle);
+    const maxTurn = turnRate * dt;
+    if (Math.abs(diff) <= maxTurn) {
+      lastAngle = targetAngle;
+    } else {
+      lastAngle += Math.sign(diff) * maxTurn;
+    }
 
-      const diff = shortestAngleDiff(lastAngle, targetAngle);
-      const maxTurn = turnRate * dt;
-      if (Math.abs(diff) <= maxTurn) {
-        lastAngle = targetAngle;
-      } else {
-        lastAngle += Math.sign(diff) * maxTurn;
-      }
+    let speed = normalSpeed;
+    const canBoost = snakeLength > baseLength + 1;
 
-      let speed = normalSpeed;
-      const canBoost = snakeLength > baseLength + 1;
+    if (boosting && canBoost) {
+      speed = boostSpeed;
+      snakeLength -= lengthLossPerSecond * dt;
+      if (snakeLength < baseLength) snakeLength = baseLength;
+    } else {
+      speed = normalSpeed;
+    }
 
-      if (boosting && canBoost) {
-        speed = boostSpeed;
-        snakeLength -= lengthLossPerSecond * dt;
-        if (snakeLength < baseLength) snakeLength = baseLength;
-      } else {
-        speed = normalSpeed;
-      }
+    const stepX = Math.cos(lastAngle) * speed * dt;
+    const stepY = Math.sin(lastAngle) * speed * dt;
 
-      const stepX = Math.cos(lastAngle) * speed * dt;
-      const stepY = Math.sin(lastAngle) * speed * dt;
+    const newHead = {
+      x: head.x + stepX,
+      y: head.y + stepY
+    };
 
-      const newHead = {
-        x: head.x + stepX,
-        y: head.y + stepY
-      };
-
-      // local border + self-death (for responsiveness)
-      if (
-        newHead.x < 0 || newHead.x > worldWidth ||
-        newHead.y < 0 || newHead.y > worldHeight
-      ) {
-        respawn();
-        return;
-      }
-
+    // Local border check + self-death
+    if (
+      newHead.x < 0 || newHead.x > worldWidth ||
+      newHead.y < 0 || newHead.y > worldHeight
+    ) {
+      respawn();
+    } else {
       snake.unshift(newHead);
       trimSnakeArray(snake, snakeLength);
 
@@ -899,10 +903,12 @@ function smoothDampAngle(current, target, velObj, smoothTime, dt) {
 
       // send my state to the server
       sendState(newHead.x, newHead.y, lastAngle, snakeLength);
-
-      // smooth remote snakes based on snapshot history
-      updateRemoteSnakes(dt);
     }
+  }
+
+  // --- Always update remote snakes, even if I’m dead ---
+  updateRemoteSnakes(dt);
+}
 
     // ================== DRAWING ==================
     function drawBackground() {
@@ -980,6 +986,9 @@ function smoothDampAngle(current, target, velObj, smoothTime, dt) {
     }
 
     function drawSnakeHeadAndEyesGeneric(head, length, hue, angle) {
+	if (!head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) return;
+	if (!Number.isFinite(angle)) angle = 0;
+
       const currentRadius = getRadiusForLength(length);
 
       const headRadiusWorld = currentRadius * 1.2;
