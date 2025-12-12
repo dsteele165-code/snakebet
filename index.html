@@ -646,64 +646,149 @@
       if (diff < -Math.PI) diff += Math.PI * 2;
       return diff;
     }
+	
+	function clamp(v, a, b) {return Math.max(a, Math.min(b, v)); }
 
-    const INTERP_DELAY_MS = 100;
+// Unity-style SmoothDamp (but simplified)
+function smoothDamp(current, target, currentVelocityObj, smoothTime, dt) {
+  smoothTime = Math.max(0.0001, smoothTime);
+  const omega = 2 / smoothTime;
 
-    function updateRemoteSnakes(dt) {
-      const now = performance.now();
-      const renderTime = now - INTERP_DELAY_MS;
+  const x = omega * dt;
+  const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
 
-      for (const id in remoteSnakes) {
-        const s = remoteSnakes[id];
-        const arr = s.samples;
-        if (!arr || arr.length === 0) continue;
+  let change = current - target;
+  const originalTo = target;
 
-        // Keep only the two samples bracketing renderTime
-        while (arr.length >= 2 && arr[1].time <= renderTime) {
-          arr.shift();
-        }
+  // clamp max speed (optional — helps teleports)
+  const maxChange = 999999;
+  change = clamp(change, -maxChange, maxChange);
+  target = current - change;
 
-        const a = arr[0];
-        const b = arr[1] || arr[0];
+  let temp = (currentVelocityObj.v + omega * change) * dt;
+  currentVelocityObj.v = (currentVelocityObj.v - omega * temp) * exp;
 
-        let t = 0;
-        if (b.time !== a.time) {
-          t = (renderTime - a.time) / (b.time - a.time);
-          if (t < 0) t = 0;
-          if (t > 1) t = 1;
-        }
+  let output = target + (change + temp) * exp;
 
-        const x = a.x + (b.x - a.x) * t;
-        const y = a.y + (b.y - a.y) * t;
+  // Prevent overshoot
+  if ((originalTo - current > 0) === (output > originalTo)) {
+    output = originalTo;
+    currentVelocityObj.v = (output - originalTo) / dt;
+  }
 
-        const baseAngle = a.angle;
-        let diff = shortestAngleDiff(baseAngle, b.angle);
-        const angle = baseAngle + diff * t;
+  return output;
+}
 
-        const length = a.length + (b.length - a.length) * t;
+function smoothDampAngle(current, target, velObj, smoothTime, dt) {
+  const diff = shortestAngleDiff(current, target);
+  return smoothDamp(current, current + diff, velObj, smoothTime, dt);
+}
 
-        s.interp = { x, y, angle, length };
+    const INTERP_DELAY_MS = 200;
 
-        if (!s.body || s.body.length === 0) {
-          s.body = [{ x, y }];
-        } else {
-          const head = s.body[0];
-          const dx = x - head.x;
-          const dy = y - head.y;
-          const dist = Math.hypot(dx, dy);
-          const minStep = 1;
+   function updateRemoteSnakes(dt) {
+  const now = performance.now();
+  const renderTime = now - INTERP_DELAY_MS;
 
-          if (dist > minStep) {
-            s.body.unshift({ x, y });
-          } else {
-            head.x = x;
-            head.y = y;
-          }
-        }
+  // tuning knobs
+  const posSmoothTime = 0.08;   // smaller = snappier, bigger = smoother
+  const angSmoothTime = 0.10;
+  const lenSmoothTime = 0.12;
+  const segmentSpacing = 2.5;   // spacing between stored body points (world units)
+  const maxExtrapMs = 120;      // don’t extrapolate too far
 
-        trimSnakeArray(s.body, length);
+  for (const id in remoteSnakes) {
+    const s = remoteSnakes[id];
+    const arr = s.samples;
+    if (!arr || arr.length === 0) continue;
+
+    // Drop old samples until [0] and [1] bracket renderTime
+    while (arr.length >= 2 && arr[1].time <= renderTime) arr.shift();
+
+    const a = arr[0];
+    const b = arr[1]; // may be undefined if we only have one sample
+
+    // Estimate target by interpolation, or short bounded extrapolation if b missing
+    let tx = a.x, ty = a.y, tAngle = a.angle, tLen = a.length;
+
+    if (b) {
+      const span = (b.time - a.time) || 1;
+      const t = clamp((renderTime - a.time) / span, 0, 1);
+
+      tx = a.x + (b.x - a.x) * t;
+      ty = a.y + (b.y - a.y) * t;
+
+      const baseAngle = a.angle;
+      const diff = shortestAngleDiff(baseAngle, b.angle);
+      tAngle = baseAngle + diff * t;
+
+      tLen = a.length + (b.length - a.length) * t;
+    } else if (arr.length >= 2) {
+      // (rare) fallback
+      tx = a.x; ty = a.y; tAngle = a.angle; tLen = a.length;
+    } else {
+      // only one sample: extrapolate using last known velocity if we can
+      // We can approximate velocity from last two *stored* body points if available
+      const extra = clamp(renderTime - a.time, 0, maxExtrapMs);
+      if (s._lastVel) {
+        tx = a.x + s._lastVel.vx * (extra / 1000);
+        ty = a.y + s._lastVel.vy * (extra / 1000);
+      }
+      tAngle = a.angle;
+      tLen = a.length;
+    }
+
+    // Create render state (smoothed) if missing
+    if (!s.render) {
+      s.render = {
+        x: tx, y: ty, angle: tAngle, length: tLen,
+        vx: { v: 0 }, vy: { v: 0 }, vang: { v: 0 }, vlen: { v: 0 }
+      };
+    }
+
+    // Smooth toward target (this is what kills jitter)
+    s.render.x = smoothDamp(s.render.x, tx, s.render.vx, posSmoothTime, dt);
+    s.render.y = smoothDamp(s.render.y, ty, s.render.vy, posSmoothTime, dt);
+    s.render.angle = smoothDampAngle(s.render.angle, tAngle, s.render.vang, angSmoothTime, dt);
+    s.render.length = smoothDamp(s.render.length, tLen, s.render.vlen, lenSmoothTime, dt);
+
+    // Store velocity estimate for tiny extrapolation if needed
+    if (b) {
+      const dtMs = Math.max(1, (b.time - a.time));
+      s._lastVel = {
+        vx: (b.x - a.x) / (dtMs / 1000),
+        vy: (b.y - a.y) / (dtMs / 1000)
+      };
+    }
+
+    // Update public interp for drawing
+    s.interp = {
+      x: s.render.x,
+      y: s.render.y,
+      angle: s.render.angle,
+      length: s.render.length
+    };
+
+    // Build body from smoothed head path
+    if (!s.body || s.body.length === 0) {
+      s.body = [{ x: s.render.x, y: s.render.y }];
+    } else {
+      const head = s.body[0];
+      const dx = s.render.x - head.x;
+      const dy = s.render.y - head.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist >= segmentSpacing) {
+        s.body.unshift({ x: s.render.x, y: s.render.y });
+      } else {
+        head.x = s.render.x;
+        head.y = s.render.y;
       }
     }
+
+    trimSnakeArray(s.body, s.render.length);
+  }
+}
 
     function worldToScreen(wx, wy) {
       return {
