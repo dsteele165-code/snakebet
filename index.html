@@ -112,39 +112,40 @@
       box-shadow: 0 0 0 3px var(--accent-soft);
       background: #050816;
     }
+	
+	#server-choice {
+  width: 100%;
+  padding: 10px 22px;
+  font-size: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  background: #05060d;
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  appearance: none;
+  background-image: linear-gradient(to bottom, #05060d, #040509);
+}
 
-    #server-choice {
-      width: 100%;
-      padding: 10px 22px;
-      font-size: 18px;
-      border-radius: 999px;
-      border: 2px solid rgba(255, 255, 255, 0.22);
-      background: #05060d;
-      color: var(--text-main);
-      outline: none;
-      transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
-      appearance: none;
-      background-image: linear-gradient(to bottom, #05060d, #040509);
-    }
+#server-choice:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: #050816;
+}
 
-    #server-choice:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-soft);
-      background: #050816;
-    }
+#server-meta {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+#server-player-count {
+  color: var(--accent);
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(30, 233, 123, 0.25);
+}
 
-    #server-meta {
-      margin-top: 10px;
-      font-size: 13px;
-      color: var(--text-muted);
-      text-align: center;
-    }
 
-    #server-player-count {
-      color: var(--accent);
-      font-weight: 700;
-      text-shadow: 0 0 8px rgba(30, 233, 123, 0.25);
-    }
 
     #bet-amount {
       width: 100%;
@@ -341,9 +342,10 @@
 
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
+	
+	const serverChoiceEl = document.getElementById("server-choice");
+	const serverPlayerCountEl = document.getElementById("server-player-count");
 
-    const serverChoiceEl = document.getElementById("server-choice");
-    const serverPlayerCountEl = document.getElementById("server-player-count");
 
     function resizeCanvas() {
       canvas.width = window.innerWidth;
@@ -397,39 +399,16 @@
     }
 
     // ================== MULTIPLAYER (WEBSOCKET) ==================
-    // IMPORTANT: This client now expects an authoritative server:
-    // - client sends INPUT only (aim + boost)
-    // - server simulates x/y/angle/length and broadcasts world snapshots
-
+    // For local testing:
+    // let socket = new WebSocket("ws://localhost:8080");
+    // For production, switch to your wss:// endpoint.
     let socket = new WebSocket("wss://snakebet-server.fly.dev");
 
     let socketOpen = false;
     let myId = null;
 
-    // server time -> client perf time conversion (reduces "ahead/behind")
-    let serverTimeOffset = null; // localPerfMs - serverEpochMs
-
-    function getLocalTimeFromServerEpoch(serverEpochMs) {
-      if (serverTimeOffset === null) return performance.now();
-      return serverEpochMs + serverTimeOffset;
-    }
-
     // id -> { id, name, hue, body: [{x,y},...], length, angle, samples, interp }
     const remoteSnakes = {};
-
-    // my own authoritative snake state (so you render yourself same as others)
-    const myNetSnake = {
-      id: null,
-      name: "Player",
-      hue: Math.floor(Math.random() * 360),
-      body: [],
-      samples: [],
-      interp: null,
-      length: baseLength,
-      angle: 0,
-      render: null,
-      _lastVel: null
-    };
 
     socket.addEventListener("open", () => {
       socketOpen = true;
@@ -437,7 +416,7 @@
     });
 
     socket.addEventListener("close", () => {
-      serverPlayerCountEl.textContent = "—";
+	serverPlayerCountEl.textContent = "—";
       console.log("Disconnected from server");
       socketOpen = false;
     });
@@ -451,103 +430,57 @@
 
       if (data.type === "welcome") {
         myId = data.id;
-        myNetSnake.id = myId;
         console.log("Welcome, id =", myId);
         return;
       }
 
       if (data.type === "world") {
-        // player count
-        if (data.players && Array.isArray(data.players)) {
-          serverPlayerCountEl.textContent = String(data.players.length);
-        }
-
-        // time sync: use server epoch time t to build stable local timeline
-        if (typeof data.t === "number" && Number.isFinite(data.t)) {
-          const estimate = performance.now() - data.t;
-          if (serverTimeOffset === null) {
-            serverTimeOffset = estimate;
-          } else {
-            // low-pass filter (smooth)
-            serverTimeOffset = serverTimeOffset * 0.90 + estimate * 0.10;
-          }
-        }
-
-        const sampleTime = (typeof data.t === "number" && Number.isFinite(data.t))
-          ? getLocalTimeFromServerEpoch(data.t)
-          : performance.now();
-
+		serverPlayerCountEl.textContent = String(data.players.length);
         const seenIds = new Set();
+        const now = performance.now();
 
         for (const p of data.players) {
-          if (!p || typeof p.id !== "string") continue;
+          if (p.id === myId) continue; // don't track ourselves
 
           seenIds.add(p.id);
 
-          const isMe = (myId !== null && p.id === myId);
+          let s = remoteSnakes[p.id];
+          if (!s) {
+            s = remoteSnakes[p.id] = {
+              id: p.id,
+              name: p.name || "Player",
+              hue: typeof p.hue === "number" ? p.hue : Math.floor(Math.random() * 360),
+              body: [],
+              samples: [],
+              interp: null,
+              length: typeof p.length === "number" ? p.length : baseLength,
+              angle: typeof p.angle === "number" ? p.angle : 0
+            };
+          }
 
-          // Pull out safe values
-          const px = (typeof p.x === "number" && Number.isFinite(p.x)) ? p.x : 0;
-          const py = (typeof p.y === "number" && Number.isFinite(p.y)) ? p.y : 0;
+          s.name = p.name || s.name;
+          if (typeof p.hue === "number") s.hue = p.hue;
 
-          const pAngle = (typeof p.angle === "number" && Number.isFinite(p.angle)) ? p.angle : 0;
-          const pLen   = (typeof p.length === "number" && Number.isFinite(p.length)) ? p.length : baseLength;
+          // Push a new snapshot sample
+         s.samples.push({
+			time: now,
+			x: p.x,
+			y: p.y,
+			angle: (typeof p.angle === "number" && Number.isFinite(p.angle)) ? p.angle
+			: (Number.isFinite(s.angle) ? s.angle : 0),
+			length: (typeof p.length === "number" && Number.isFinite(p.length)) ? p.length
+         : (Number.isFinite(s.length) ? s.length : baseLength)
+});
 
-          if (isMe) {
-            // update "myNetSnake"
-            myNetSnake.name = p.name || myNetSnake.name;
-            if (typeof p.hue === "number" && Number.isFinite(p.hue)) myNetSnake.hue = p.hue;
 
-            myNetSnake.samples.push({
-              time: sampleTime,
-              x: px,
-              y: py,
-              angle: pAngle,
-              length: pLen
-            });
+          // Update last known angle/length for fallback
+          if (typeof p.angle === "number" && Number.isFinite(p.angle)) s.angle = p.angle;
+		if (typeof p.length === "number" && Number.isFinite(p.length)) s.length = p.length;
 
-            myNetSnake.angle = pAngle;
-            myNetSnake.length = pLen;
 
-            if (myNetSnake.samples.length > 80) {
-              myNetSnake.samples.shift();
-            }
-
-          } else {
-            // update a remote snake
-            let s = remoteSnakes[p.id];
-            if (!s) {
-              s = remoteSnakes[p.id] = {
-                id: p.id,
-                name: p.name || "Player",
-                hue: typeof p.hue === "number" ? p.hue : Math.floor(Math.random() * 360),
-                body: [],
-                samples: [],
-                interp: null,
-                length: pLen,
-                angle: pAngle,
-                render: null,
-                _lastVel: null
-              };
-            }
-
-            s.name = p.name || s.name;
-            if (typeof p.hue === "number" && Number.isFinite(p.hue)) s.hue = p.hue;
-
-            s.samples.push({
-              time: sampleTime,
-              x: px,
-              y: py,
-              angle: pAngle,
-              length: pLen
-            });
-
-            s.angle = pAngle;
-            s.length = pLen;
-
-            if (s.samples.length > 80) {
-              s.samples.shift();
-            }
+          // Limit history size
+          if (s.samples.length > 60) {
+            s.samples.shift();
           }
         }
 
@@ -571,28 +504,22 @@
       }));
     }
 
-    // NEW: send INPUT (authoritative server sim)
-    let inputSeq = 0;
-
-    function sendInput(aimAngle, boost) {
+    function sendState(headX, headY, angle, length) {
       if (!socketOpen) return;
       socket.send(JSON.stringify({
-        type: "input",
-        seq: ++inputSeq,
-        aim: aimAngle,
-        boost: !!boost
+        type: "state",
+        x: headX,
+        y: headY,
+        angle,
+        length
       }));
     }
 
     // ================== SNAKE GAME STATE ==================
 
     let snakeHue = Math.floor(Math.random() * 360);
-
-    // NOTE:
-    // - In authoritative mode, snakeLength / snake[] / lastAngle are driven by server snapshots
-    // - We keep the variables so the rest of your drawing code stays similar
-
     let snakeLength = baseLength;
+
     let snake = [];
     let foods = [];
 
@@ -653,7 +580,6 @@
       const x = worldWidth / 2;
       const y = worldHeight / 2;
 
-      // placeholder until server snapshots arrive
       snake = [{ x, y }];
       snakeLength = baseLength;
       boosting = false;
@@ -665,6 +591,8 @@
 
       mouse.x = canvas.width / 2;
       mouse.y = canvas.height / 2;
+
+      // don’t re-randomize snakeHue here; keep same color for this session
     }
 
     function resetFood() {
@@ -722,163 +650,149 @@
       if (diff < -Math.PI) diff += Math.PI * 2;
       return diff;
     }
+	
+	function clamp(v, a, b) {return Math.max(a, Math.min(b, v)); }
 
-    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+// Unity-style SmoothDamp (but simplified)
+function smoothDamp(current, target, currentVelocityObj, smoothTime, dt) {
+  const dtSafe = Math.max(1e-5, dt);  // <-- critical: never allow 0
+  smoothTime = Math.max(0.0001, smoothTime);
+  const omega = 2 / smoothTime;
 
-    // Unity-style SmoothDamp (but simplified)
-    function smoothDamp(current, target, currentVelocityObj, smoothTime, dt) {
-      const dtSafe = Math.max(1e-5, dt);
-      smoothTime = Math.max(0.0001, smoothTime);
-      const omega = 2 / smoothTime;
+  const x = omega * dtSafe;
+  const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
 
-      const x = omega * dtSafe;
-      const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  let change = current - target;
+  const originalTo = target;
 
-      let change = current - target;
-      const originalTo = target;
+  const maxChange = 999999;
+  change = clamp(change, -maxChange, maxChange);
+  target = current - change;
 
-      const maxChange = 999999;
-      change = clamp(change, -maxChange, maxChange);
-      target = current - change;
+  let temp = (currentVelocityObj.v + omega * change) * dtSafe;
+  currentVelocityObj.v = (currentVelocityObj.v - omega * temp) * exp;
 
-      let temp = (currentVelocityObj.v + omega * change) * dtSafe;
-      currentVelocityObj.v = (currentVelocityObj.v - omega * temp) * exp;
+  let output = target + (change + temp) * exp;
 
-      let output = target + (change + temp) * exp;
+  // Prevent overshoot (and don’t divide by dt)
+  if ((originalTo - current > 0) === (output > originalTo)) {
+    output = originalTo;
+    currentVelocityObj.v = 0; // <-- critical: avoid Infinity/NaN
+  }
 
-      if ((originalTo - current > 0) === (output > originalTo)) {
-        output = originalTo;
-        currentVelocityObj.v = 0;
+  return output;
+}
+
+function smoothDampAngle(current, target, velObj, smoothTime, dt) {
+  const diff = shortestAngleDiff(current, target);
+  return smoothDamp(current, current + diff, velObj, smoothTime, dt);
+}
+
+    const INTERP_DELAY_MS = 120;
+
+   function updateRemoteSnakes(dt) {
+  const now = performance.now();
+  const renderTime = now - INTERP_DELAY_MS;
+
+  // tuning knobs
+  const posSmoothTime = 0.07;   // smaller = snappier, bigger = smoother
+  const angSmoothTime = 0.08;
+  const lenSmoothTime = 0.10;
+  const segmentSpacing = 2.5;   // spacing between stored body points (world units)
+  const maxExtrapMs = 120;      // don’t extrapolate too far
+
+  for (const id in remoteSnakes) {
+    const s = remoteSnakes[id];
+    const arr = s.samples;
+    if (!arr || arr.length === 0) continue;
+
+    // Drop old samples until [0] and [1] bracket renderTime
+    while (arr.length >= 2 && arr[1].time <= renderTime) arr.shift();
+
+    const a = arr[0];
+    const b = arr[1]; // may be undefined if we only have one sample
+
+    // Estimate target by interpolation, or short bounded extrapolation if b missing
+    let tx = a.x, ty = a.y, tAngle = a.angle, tLen = a.length;
+
+    if (b) {
+      const span = (b.time - a.time) || 1;
+      const t = clamp((renderTime - a.time) / span, 0, 1);
+
+      tx = a.x + (b.x - a.x) * t;
+      ty = a.y + (b.y - a.y) * t;
+
+      const baseAngle = a.angle;
+      const diff = shortestAngleDiff(baseAngle, b.angle);
+      tAngle = baseAngle + diff * t;
+
+      tLen = a.length + (b.length - a.length) * t;
+    } else if (arr.length >= 2) {
+      // (rare) fallback
+      tx = a.x; ty = a.y; tAngle = a.angle; tLen = a.length;
+    } else {
+      // only one sample: extrapolate using last known velocity if we can
+      // We can approximate velocity from last two *stored* body points if available
+      const extra = clamp(renderTime - a.time, 0, maxExtrapMs);
+      if (s._lastVel) {
+        tx = a.x + s._lastVel.vx * (extra / 1000);
+        ty = a.y + s._lastVel.vy * (extra / 1000);
       }
-
-      return output;
+      tAngle = a.angle;
+      tLen = a.length;
     }
 
-    function smoothDampAngle(current, target, velObj, smoothTime, dt) {
-      const diff = shortestAngleDiff(current, target);
-      return smoothDamp(current, current + diff, velObj, smoothTime, dt);
-    }
-
-    // ================== INTERPOLATION / RENDER STATE ==================
-    // Render delay (ms): everyone (including YOU) gets rendered at the same delayed time,
-    // which fixes the "I’m on top of him but I’m ahead on his screen" issue.
-    const INTERP_DELAY_MS = 160;
-
-    function updateOneSnakeFromSamples(s, dt) {
-      const now = performance.now();
-      const renderTime = now - INTERP_DELAY_MS;
-
-      // tuning knobs
-      const posSmoothTime = 0.11;
-      const angSmoothTime = 0.13;
-      const lenSmoothTime = 0.16;
-      const segmentSpacing = 2.5;
-      const maxExtrapMs = 120;
-
-      const arr = s.samples;
-      if (!arr || arr.length === 0) return;
-
-      // Drop old samples until [0] and [1] bracket renderTime
-      while (arr.length >= 2 && arr[1].time <= renderTime) arr.shift();
-
-      const a = arr[0];
-      const b = arr[1]; // may be undefined
-
-      // Estimate target by interpolation, or short bounded extrapolation if b missing
-      let tx = a.x, ty = a.y, tAngle = a.angle, tLen = a.length;
-
-      if (b) {
-        const span = (b.time - a.time) || 1;
-        const t = clamp((renderTime - a.time) / span, 0, 1);
-
-        tx = a.x + (b.x - a.x) * t;
-        ty = a.y + (b.y - a.y) * t;
-
-        const baseAngle = a.angle;
-        const diff = shortestAngleDiff(baseAngle, b.angle);
-        tAngle = baseAngle + diff * t;
-
-        tLen = a.length + (b.length - a.length) * t;
-      } else {
-        // only one sample: tiny bounded extrapolation using last vel
-        const extra = clamp(renderTime - a.time, 0, maxExtrapMs);
-        if (s._lastVel) {
-          tx = a.x + s._lastVel.vx * (extra / 1000);
-          ty = a.y + s._lastVel.vy * (extra / 1000);
-        }
-        tAngle = a.angle;
-        tLen = a.length;
-      }
-
-      // Create render state (smoothed) if missing
-      if (!s.render) {
-        s.render = {
-          x: tx, y: ty, angle: tAngle, length: tLen,
-          vx: { v: 0 }, vy: { v: 0 }, vang: { v: 0 }, vlen: { v: 0 }
-        };
-      }
-
-      // Smooth toward target
-      s.render.x = smoothDamp(s.render.x, tx, s.render.vx, posSmoothTime, dt);
-      s.render.y = smoothDamp(s.render.y, ty, s.render.vy, posSmoothTime, dt);
-      s.render.angle = smoothDampAngle(s.render.angle, tAngle, s.render.vang, angSmoothTime, dt);
-      s.render.length = smoothDamp(s.render.length, tLen, s.render.vlen, lenSmoothTime, dt);
-
-      // Store velocity estimate
-      if (b) {
-        const dtMs = Math.max(1, (b.time - a.time));
-        s._lastVel = {
-          vx: (b.x - a.x) / (dtMs / 1000),
-          vy: (b.y - a.y) / (dtMs / 1000)
-        };
-      }
-
-      // Update public interp for drawing
-      s.interp = {
-        x: s.render.x,
-        y: s.render.y,
-        angle: s.render.angle,
-        length: s.render.length
+    // Create render state (smoothed) if missing
+    if (!s.render) {
+      s.render = {
+        x: tx, y: ty, angle: tAngle, length: tLen,
+        vx: { v: 0 }, vy: { v: 0 }, vang: { v: 0 }, vlen: { v: 0 }
       };
+    }
 
-      // Build body from smoothed head path
-      if (!s.body || s.body.length === 0) {
-        s.body = [{ x: s.render.x, y: s.render.y }];
+    // Smooth toward target (this is what kills jitter)
+    s.render.x = smoothDamp(s.render.x, tx, s.render.vx, posSmoothTime, dt);
+    s.render.y = smoothDamp(s.render.y, ty, s.render.vy, posSmoothTime, dt);
+    s.render.angle = smoothDampAngle(s.render.angle, tAngle, s.render.vang, angSmoothTime, dt);
+    s.render.length = smoothDamp(s.render.length, tLen, s.render.vlen, lenSmoothTime, dt);
+
+    // Store velocity estimate for tiny extrapolation if needed
+    if (b) {
+      const dtMs = Math.max(1, (b.time - a.time));
+      s._lastVel = {
+        vx: (b.x - a.x) / (dtMs / 1000),
+        vy: (b.y - a.y) / (dtMs / 1000)
+      };
+    }
+
+    // Update public interp for drawing
+    s.interp = {
+      x: s.render.x,
+      y: s.render.y,
+      angle: s.render.angle,
+      length: s.render.length
+    };
+
+    // Build body from smoothed head path
+    if (!s.body || s.body.length === 0) {
+      s.body = [{ x: s.render.x, y: s.render.y }];
+    } else {
+      const head = s.body[0];
+      const dx = s.render.x - head.x;
+      const dy = s.render.y - head.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist >= segmentSpacing) {
+        s.body.unshift({ x: s.render.x, y: s.render.y });
       } else {
-        const head = s.body[0];
-        const dx = s.render.x - head.x;
-        const dy = s.render.y - head.y;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist >= segmentSpacing) {
-          s.body.unshift({ x: s.render.x, y: s.render.y });
-        } else {
-          head.x = s.render.x;
-          head.y = s.render.y;
-        }
-      }
-
-      trimSnakeArray(s.body, s.render.length);
-    }
-
-    function updateRemoteSnakes(dt) {
-      for (const id in remoteSnakes) {
-        const s = remoteSnakes[id];
-        updateOneSnakeFromSamples(s, dt);
+        head.x = s.render.x;
+        head.y = s.render.y;
       }
     }
 
-    function updateMyNetSnake(dt) {
-      updateOneSnakeFromSamples(myNetSnake, dt);
-
-      // push my authoritative render state into your existing variables
-      if (myNetSnake.interp && myNetSnake.body && myNetSnake.body.length) {
-        snake = myNetSnake.body;
-        snakeLength = myNetSnake.interp.length;
-        snakeHue = myNetSnake.hue;
-        lastAngle = myNetSnake.interp.angle;
-      }
-    }
+    trimSnakeArray(s.body, s.render.length);
+  }
+}
 
     function worldToScreen(wx, wy) {
       return {
@@ -889,68 +803,112 @@
 
     // ================== MAIN LOOP ==================
     function gameLoop(timestamp) {
-      if (!lastTime) lastTime = timestamp;
+  if (!lastTime) lastTime = timestamp;
 
-      let dt = (timestamp - lastTime) / 1000;
-      lastTime = timestamp;
+  let dt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
 
-      if (dt <= 0) dt = 1 / 60;
-      if (dt > maxDt) dt = maxDt;
+  if (dt <= 0) dt = 1 / 60;
+  if (dt > maxDt) dt = maxDt;
 
-      update(dt);
-      draw();
+  update(dt);
+  draw();
 
-      requestAnimationFrame(gameLoop);
-    }
+  requestAnimationFrame(gameLoop);
+}
 
     // ================== UPDATE ==================
-    // In authoritative mode:
-    // - We DO NOT send x/y to the server
-    // - We compute aimAngle (from mouse) + boost and send "input"
-    // - We render ourselves from server snapshots at the same interpolation delay as others
-
-    let inputSendAccum = 0;
-    const INPUT_SEND_HZ = 30;
-
     function update(dt) {
-      // camera follows authoritative snake, if present
-      if (snake && snake.length) {
-        camX = snake[0].x;
-        camY = snake[0].y;
-      }
+  // --- Update my local snake ---
+  if (snake.length) {
+    const head = snake[0];
+    camX = head.x;
+    camY = head.y;
 
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
 
-      const mx = mouse.x - centerX;
-      const my = mouse.y - centerY;
-      const distMouse = Math.hypot(mx, my);
+    const mx = mouse.x - centerX;
+    const my = mouse.y - centerY;
+    const distMouse = Math.hypot(mx, my);
 
-      const aimDeadZone = 6;
-      let aimAngle = lastAngle;
-      if (distMouse > aimDeadZone) {
-        aimAngle = Math.atan2(my, mx);
-      }
-
-      // send inputs at a steady rate (avoids packet spam + jitter)
-      inputSendAccum += dt;
-      const step = 1 / INPUT_SEND_HZ;
-
-      while (inputSendAccum >= step) {
-        inputSendAccum -= step;
-        sendInput(aimAngle, boosting);
-      }
-
-      // smooth/interp both self + remote snakes
-      updateMyNetSnake(dt);
-      updateRemoteSnakes(dt);
-
-      // camera follow (after interpolation updates)
-      if (snake && snake.length) {
-        camX = snake[0].x;
-        camY = snake[0].y;
-      }
+    const aimDeadZone = 6;
+    let targetAngle = lastAngle;
+    if (distMouse > aimDeadZone) {
+      targetAngle = Math.atan2(my, mx);
     }
+
+    const diff = shortestAngleDiff(lastAngle, targetAngle);
+    const maxTurn = turnRate * dt;
+    if (Math.abs(diff) <= maxTurn) {
+      lastAngle = targetAngle;
+    } else {
+      lastAngle += Math.sign(diff) * maxTurn;
+    }
+
+    let speed = normalSpeed;
+    const canBoost = snakeLength > baseLength + 1;
+
+    if (boosting && canBoost) {
+      speed = boostSpeed;
+      snakeLength -= lengthLossPerSecond * dt;
+      if (snakeLength < baseLength) snakeLength = baseLength;
+    } else {
+      speed = normalSpeed;
+    }
+
+    const stepX = Math.cos(lastAngle) * speed * dt;
+    const stepY = Math.sin(lastAngle) * speed * dt;
+
+    const newHead = {
+      x: head.x + stepX,
+      y: head.y + stepY
+    };
+
+    // Local border check + self-death
+    if (
+      newHead.x < 0 || newHead.x > worldWidth ||
+      newHead.y < 0 || newHead.y > worldHeight
+    ) {
+      respawn();
+    } else {
+      snake.unshift(newHead);
+      trimSnakeArray(snake, snakeLength);
+
+      const currentRadius = getCurrentRadius();
+      const headRadiusWorld = currentRadius * 1.2;
+      const killRadius = headRadiusWorld * 0.75;
+      const selfHitStartIndex = 12;
+
+      for (let i = selfHitStartIndex; i < snake.length; i++) {
+        const s = snake[i];
+        const dx = s.x - newHead.x;
+        const dy = s.y - newHead.y;
+        if (Math.hypot(dx, dy) < killRadius) {
+          respawn();
+          return;
+        }
+      }
+
+      for (let i = foods.length - 1; i >= 0; i--) {
+        const f = foods[i];
+        const dx = f.x - newHead.x;
+        const dy = f.y - newHead.y;
+        if (Math.hypot(dx, dy) < headRadiusWorld + f.radius) {
+          foods.splice(i, 1);
+          snakeLength += lengthGainPerFood;
+          spawnFood();
+        }
+      }
+
+      // send my state to the server
+      sendState(newHead.x, newHead.y, lastAngle, snakeLength);
+    }
+  }
+
+  // --- Always update remote snakes, even if I’m dead ---
+  updateRemoteSnakes(dt);
+}
 
     // ================== DRAWING ==================
     function drawBackground() {
@@ -962,7 +920,8 @@
         centerX, centerY, Math.max(canvas.width, canvas.height)
       );
 
-      const innerColor = (boosting && snakeLength > baseLength + 1) ? "#333333" : "#222222";
+      const actuallyBoosting = boosting && snakeLength > baseLength + 1;
+      const innerColor = actuallyBoosting ? "#333333" : "#222222";
 
       grd.addColorStop(0, innerColor);
       grd.addColorStop(1, "#050505");
@@ -984,8 +943,6 @@
     }
 
     function drawFood() {
-      // NOTE: food is still local visuals here.
-      // If you want food authoritative, it must be simulated server-side too.
       for (const f of foods) {
         const p = worldToScreen(f.x, f.y);
         if (p.x < -40 || p.x > canvas.width + 40 || p.y < -40 || p.y > canvas.height + 40) continue;
@@ -1029,8 +986,8 @@
     }
 
     function drawSnakeHeadAndEyesGeneric(head, length, hue, angle) {
-      if (!head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) return;
-      if (!Number.isFinite(angle)) angle = 0;
+	if (!head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) return;
+	if (!Number.isFinite(angle)) angle = 0;
 
       const currentRadius = getRadiusForLength(length);
 
@@ -1086,7 +1043,7 @@
     }
 
     function drawMySnake() {
-      if (!snake || !snake.length) return;
+      if (!snake.length) return;
       drawSnakeBodyGeneric(snake, snakeLength, snakeHue);
       const head = snake[0];
       drawSnakeHeadAndEyesGeneric(head, snakeLength, snakeHue, lastAngle);
@@ -1120,8 +1077,7 @@
     }
 
     function drawDirectionIndicator() {
-      if (!snake || !snake.length) return;
-
+      if (!snake.length) return;
       const head = snake[0];
       const currentRadius = getCurrentRadius();
 
@@ -1147,7 +1103,7 @@
       ctx.fillText(`Player: ${username}`, 20, 30);
       ctx.fillText(`Bet: ${betAmount}$`, 20, 50);
       ctx.fillText("Move the mouse around your snake to steer (Slither-style).", 20, 70);
-      ctx.fillText("Hold LEFT MOUSE to BOOST (server-authoritative).", 20, 90);
+      ctx.fillText("Hold LEFT MOUSE to BOOST (spends length).", 20, 90);
       ctx.fillText(`Length: ${Math.round(snakeLength)}`, 20, 110);
       ctx.fillText(`Zoom: ${zoom.toFixed(2)}x`, 20, 130);
 
@@ -1159,21 +1115,29 @@
       ctx.textAlign = "right";
       ctx.fillStyle = "rgba(255,255,255,0.7)";
       ctx.fillText(
-        "Mouse wheel = zoom. Red box = world border. Rendering uses server snapshots.",
+        "Mouse wheel = zoom. Red box = world border. Hit border or your body to respawn.",
         canvas.width - 20,
         30
       );
     }
 
     function draw() {
-      drawBackground();
-      drawWorldBorder();
-      drawFood();
-      drawRemoteSnakes();
-      drawMySnake();
-      drawDirectionIndicator();
-      drawHUD();
-    }
+  drawBackground();
+  drawWorldBorder();
+
+  // draw things that should ALWAYS be visible
+  drawFood();
+  drawRemoteSnakes();
+
+  // only draw my snake + indicator if I exist
+  if (snake && snake.length > 0) {
+    drawMySnake();
+    drawDirectionIndicator();
+  }
+
+  drawHUD();
+}
+
   </script>
 </body>
 </html>
